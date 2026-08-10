@@ -3,18 +3,27 @@ from sqlalchemy.orm import Session as DbSession
 
 from app.auth import clear_session_cookie, get_current_user, require_roles
 from app.db import get_db
-from app.models import Role, User
-from app.schemas import AuthResponse, LoginRequest, ShopCreate, ShopOut, UserCreate, UserOut
+from app.models import Attendance, Role, User
+from app.schemas import AttendanceCheckIn, AttendanceCheckout, AttendanceBreakEnd, AttendanceBreakStart, AttendanceOut, AuthResponse, AssignUserRequest, LoginRequest, ShopCreate, ShopOut, UserCreate, UserOut, UserUpdate
 from app.services import (
     authenticate_user,
+    assign_user_to_parent,
+    check_in,
+    check_out,
     create_session_for_user,
     create_shop,
     create_user,
     clear_user_sessions,
-    get_user_by_id,
+    end_break,
+    get_attendance_for_user_by_month,
     get_user_by_cnic,
     get_all_shops,
     get_all_users,
+    get_direct_reports,
+    get_users_by_area,
+    get_users_under_me,
+    start_break,
+    update_current_user,
 )
 
 router = APIRouter()
@@ -53,31 +62,6 @@ def me(user: User = Depends(get_current_user)):
     return user
 
 
-@router.get("/admin")
-def admin(user: User = Depends(require_roles(Role.ADMIN))):
-    return {"message": "Admin access granted", "user": user.name}
-
-
-@router.get("/zsm")
-def zsm(user: User = Depends(require_roles(Role.ZSM))):
-    return {"message": "ZSM access granted", "user": user.name}
-
-
-@router.get("/tsm")
-def tsm(user: User = Depends(require_roles(Role.TSM))):
-    return {"message": "TSM access granted", "user": user.name}
-
-
-@router.get("/asm")
-def asm(user: User = Depends(require_roles(Role.ASM))):
-    return {"message": "ASM access granted", "user": user.name}
-
-
-@router.get("/sr")
-def sr(user: User = Depends(require_roles(Role.SR))):
-    return {"message": "SR access granted", "user": user.name}
-
-
 @router.get("/users", response_model=list[UserOut])
 def list_users(user: User = Depends(require_roles(Role.ADMIN)), db: DbSession = Depends(get_db)):
     return get_all_users(db)
@@ -88,9 +72,89 @@ def get_user_by_cnic_route(cnic: str, user: User = Depends(require_roles(Role.AD
     return get_user_by_cnic(db, cnic)
 
 
-@router.get("/users/{user_id}", response_model=UserOut)
-def get_user(user_id: int, user: User = Depends(require_roles(Role.ADMIN)), db: DbSession = Depends(get_db)):
-    return get_user_by_id(db, user_id)
+@router.post("/users/assign", response_model=UserOut)
+def assign_user_route(payload: AssignUserRequest, user: User = Depends(require_roles(Role.ADMIN)), db: DbSession = Depends(get_db)):
+    return assign_user_to_parent(db, payload.child_id, payload.parent_id)
+
+
+@router.get("/users/reports", response_model=list[UserOut])
+def get_direct_reports_route(user: User = Depends(require_roles(Role.ZSM, Role.TSM, Role.ASM)), db: DbSession = Depends(get_db)):
+    return get_direct_reports(db, user)
+
+
+@router.get("/users/under-me", response_model=list[UserOut])
+def get_users_under_me_route(
+    user: User = Depends(require_roles(Role.ADMIN, Role.ZSM, Role.TSM, Role.ASM, Role.SR)),
+    db: DbSession = Depends(get_db),
+):
+    return get_users_under_me(db, user)
+
+
+@router.put("/me", response_model=UserOut)
+def update_me(payload: UserUpdate, user: User = Depends(get_current_user), db: DbSession = Depends(get_db)):
+    return update_current_user(db, user, payload)
+
+
+@router.get("/users/search", response_model=list[UserOut])
+def search_users_by_area(area: str, user: User = Depends(require_roles(Role.ADMIN)), db: DbSession = Depends(get_db)):
+    return get_users_by_area(db, area)
+
+
+@router.post("/attendance/checkin", response_model=AttendanceOut)
+def attendance_checkin_route(
+    payload: AttendanceCheckIn,
+    user: User = Depends(get_current_user),
+    db: DbSession = Depends(get_db),
+):
+    return check_in(db, user, payload)
+
+
+@router.post("/attendance/break/start", response_model=AttendanceOut)
+def attendance_break_start_route(
+    payload: AttendanceBreakStart,
+    user: User = Depends(get_current_user),
+    db: DbSession = Depends(get_db),
+):
+    return start_break(db, user, payload)
+
+
+@router.post("/attendance/break/end", response_model=AttendanceOut)
+def attendance_break_end_route(
+    payload: AttendanceBreakEnd,
+    user: User = Depends(get_current_user),
+    db: DbSession = Depends(get_db),
+):
+    return end_break(db, user, payload)
+
+
+@router.post("/attendance/checkout", response_model=AttendanceOut)
+def attendance_checkout_route(
+    payload: AttendanceCheckout,
+    user: User = Depends(get_current_user),
+    db: DbSession = Depends(get_db),
+):
+    return check_out(db, user, payload)
+
+
+@router.get("/attendance", response_model=list[AttendanceOut])
+def get_my_attendance_route(
+    month: int,
+    year: int,
+    user: User = Depends(get_current_user),
+    db: DbSession = Depends(get_db),
+):
+    return get_attendance_for_user_by_month(db, user.id, month, year)
+
+
+@router.get("/attendance/user/{cnic}", response_model=list[AttendanceOut])
+def get_user_attendance_route(
+    cnic: str,
+    month: int,
+    year: int,
+    user: User = Depends(require_roles(Role.ADMIN)),
+    db: DbSession = Depends(get_db),
+):
+    return get_attendance_for_user_by_month(db, cnic, month, year)
 
 
 @router.post("/create_shops", response_model=ShopOut, status_code=status.HTTP_201_CREATED)
