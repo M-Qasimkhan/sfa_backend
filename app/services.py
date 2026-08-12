@@ -2,8 +2,8 @@ from datetime import date, datetime
 from sqlalchemy.orm import Session as DbSession
 from fastapi import HTTPException, status
 
-from app.models import Attendance, Role, Session as SessionModel, Shop, User
-from app.schemas import AttendanceBreakEnd, AttendanceBreakStart, AttendanceCheckout, AttendanceCheckIn, ShopCreate, UserCreate, LoginRequest, UserUpdate
+from app.models import Attendance, LeaveRequest, Role, Session as SessionModel, Shop, User
+from app.schemas import AttendanceBreakEnd, AttendanceBreakStart, AttendanceCheckout, AttendanceCheckIn, LeaveCreate, ShopCreate, UserCreate, LoginRequest, UserUpdate
 from app.security import get_password_hash, verify_password, create_session_key, get_session_expiration
 
 
@@ -261,6 +261,58 @@ def check_out(db: DbSession, user: User, payload: "AttendanceCheckout") -> Atten
     db.commit()
     db.refresh(attendance)
     return attendance
+
+
+def create_leave(db: DbSession, user: User, payload: "LeaveCreate") -> LeaveRequest:
+    leave_request = LeaveRequest(
+        user_id=user.id,
+        category=payload.category.strip(),
+        start_date=payload.start_date,
+        end_date=payload.end_date,
+        reason=payload.reason.strip(),
+        evidence_image=payload.evidence_image,
+    )
+    db.add(leave_request)
+    db.commit()
+    db.refresh(leave_request)
+    return leave_request
+
+
+def update_leave_status(db: DbSession, leave_id: int, status_value: bool) -> LeaveRequest:
+    leave_request = db.query(LeaveRequest).filter(LeaveRequest.id == leave_id).first()
+    if not leave_request:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Leave request not found")
+    leave_request.status = status_value
+    db.add(leave_request)
+    db.commit()
+    db.refresh(leave_request)
+    return leave_request
+
+
+def get_leaves_for_user(db: DbSession, user: User) -> list[LeaveRequest]:
+    return (
+        db.query(LeaveRequest)
+        .filter(LeaveRequest.user_id == user.id)
+        .order_by(LeaveRequest.start_date.desc())
+        .all()
+    )
+
+
+def get_leaves_for_users(db: DbSession, user_ids: list[int]) -> list[LeaveRequest]:
+    if not user_ids:
+        return []
+    return (
+        db.query(LeaveRequest)
+        .filter(LeaveRequest.user_id.in_(user_ids))
+        .order_by(LeaveRequest.start_date.desc())
+        .all()
+    )
+
+
+def get_leaves_under_manager(db: DbSession, manager: User) -> list[LeaveRequest]:
+    report_users = get_users_under_me(db, manager)
+    report_ids = [report.id for report in report_users]
+    return get_leaves_for_users(db, report_ids)
 
 
 def get_attendance_for_user_by_month(db: DbSession, cnic: str, month: int, year: int) -> list[Attendance]:
