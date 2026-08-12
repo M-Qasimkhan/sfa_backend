@@ -69,6 +69,7 @@ class User(Base):
     sessions: Mapped[list["Session"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     shops: Mapped[list["Shop"]] = relationship("Shop", back_populates="created_by", cascade="all, delete-orphan")
     attendances: Mapped[list["Attendance"]] = relationship("Attendance", back_populates="user", cascade="all, delete-orphan")
+    leaves: Mapped[list["LeaveRequest"]] = relationship("LeaveRequest", back_populates="user", cascade="all, delete-orphan")
 
 
 class Session(Base):
@@ -119,3 +120,20 @@ class Attendance(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
     user: Mapped[User] = relationship("User", back_populates="attendances")
+
+
+class LeaveRequest(Base):
+    __tablename__ = "leave_requests"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    category: Mapped[str] = mapped_column(String(100), nullable=False)
+    start_date: Mapped[date] = mapped_column(Date, nullable=False)
+    end_date: Mapped[date] = mapped_column(Date, nullable=False)
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    evidence_image: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[bool | None] = mapped_column(Boolean, nullable=True, default=None)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    user: Mapped[User] = relationship("User", back_populates="leaves")
