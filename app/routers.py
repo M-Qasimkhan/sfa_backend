@@ -2,20 +2,24 @@ from fastapi import APIRouter, Depends, Response, status
 from sqlalchemy.orm import Session as DbSession
 
 from app.auth import clear_session_cookie, get_current_user, require_roles
+from app.config import settings
 from app.db import get_db
 from app.models import Attendance, Role, User
-from app.schemas import AttendanceCheckIn, AttendanceCheckout, AttendanceBreakEnd, AttendanceBreakStart, AttendanceOut, AuthResponse, AssignUserRequest, LoginRequest, ShopCreate, ShopOut, UserCreate, UserOut, UserUpdate
+from app.schemas import AttendanceCheckIn, AttendanceCheckout, AttendanceBreakEnd, AttendanceBreakStart, AttendanceOut, AuthResponse, AssignUserRequest, LeaveCreate, LeaveOut, LeaveStatusUpdate, LoginRequest, ShopCreate, ShopOut, UserCreate, UserOut, UserUpdate
 from app.services import (
     authenticate_user,
     assign_user_to_parent,
     check_in,
     check_out,
+    create_leave,
     create_session_for_user,
     create_shop,
     create_user,
     clear_user_sessions,
     end_break,
     get_attendance_for_user_by_month,
+    get_leaves_for_user,
+    get_leaves_under_manager,
     get_user_by_cnic,
     get_all_shops,
     get_all_users,
@@ -24,6 +28,7 @@ from app.services import (
     get_users_under_me,
     start_break,
     update_current_user,
+    update_leave_status,
 )
 
 router = APIRouter()
@@ -40,14 +45,15 @@ def login(payload: LoginRequest, response: Response, db: DbSession = Depends(get
     user = authenticate_user(db, payload)
     session_key, _ = create_session_for_user(db, user)
     response.set_cookie(
-        key="session_id",
+        key=settings.COOKIE_NAME,
         value=session_key,
         httponly=True,
         samesite="lax",
-        max_age=3600,
+        max_age=settings.SESSION_EXPIRE_MINUTES * 60,
         secure=False,
     )
-    return {"message": "Login successful", "user": user}
+    print(f"User {user.email} logged in successfully. Session key: {session_key}")
+    return {"message": "Login successful", "user": user, "session_key": session_key}
 
 
 @router.post("/logout")
@@ -134,6 +140,41 @@ def attendance_checkout_route(
     db: DbSession = Depends(get_db),
 ):
     return check_out(db, user, payload)
+
+
+@router.post("/leaves", response_model=LeaveOut, status_code=status.HTTP_201_CREATED)
+def create_leave_route(
+    payload: LeaveCreate,
+    user: User = Depends(get_current_user),
+    db: DbSession = Depends(get_db),
+):
+    return create_leave(db, user, payload)
+
+
+@router.get("/leaves", response_model=list[LeaveOut])
+def list_my_leaves_route(
+    user: User = Depends(get_current_user),
+    db: DbSession = Depends(get_db),
+):
+    return get_leaves_for_user(db, user)
+
+
+@router.get("/leaves/under-me", response_model=list[LeaveOut])
+def list_leaves_under_me_route(
+    user: User = Depends(require_roles(Role.ADMIN, Role.ZSM, Role.TSM, Role.ASM)),
+    db: DbSession = Depends(get_db),
+):
+    return get_leaves_under_manager(db, user)
+
+
+@router.post("/leaves/{leave_id}/status", response_model=LeaveOut)
+def set_leave_status_route(
+    leave_id: int,
+    payload: LeaveStatusUpdate,
+    user: User = Depends(require_roles(Role.ADMIN, Role.ZSM, Role.TSM, Role.ASM)),
+    db: DbSession = Depends(get_db),
+):
+    return update_leave_status(db, leave_id, payload.status)
 
 
 @router.get("/attendance", response_model=list[AttendanceOut])
