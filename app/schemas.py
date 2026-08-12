@@ -136,6 +136,34 @@ class AttendanceOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class LeaveCreate(BaseModel):
+    category: str
+    start_date: date
+    end_date: date
+    reason: str
+    evidence_image: str | None = None
+
+
+class LeaveOut(BaseModel):
+    id: int
+    user_id: int
+    category: str
+    start_date: date
+    end_date: date
+    reason: str
+    evidence_image: str | None = None
+    status: bool | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+    model_config = {"from_attributes": True}
+
+
+class LeaveStatusUpdate(BaseModel):
+    status: bool
+
+
 class AuthResponse(BaseModel):
     message: str
     user: UserOut
+    session_key: str
