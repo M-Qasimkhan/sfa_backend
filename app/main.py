@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 
 from app.db import Base, engine
-from app.models import Attendance, Session, Shop, User  # noqa: F401
+from app.models import Attendance, LeaveRequest, Session, Shop, User  # noqa: F401
 from app.routers import router
 
 app = FastAPI(title="Golden Foods SFA", version="1.0.0")
