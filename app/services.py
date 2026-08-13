@@ -105,6 +105,8 @@ def get_user_by_id(db: DbSession, user_id: int) -> User:
 
 
 def get_user_by_cnic(db: DbSession, cnic: str) -> User:
+    # ensure CNIC is compared as string to match the DB column type
+    cnic = str(cnic)
     user = db.query(User).filter(User.cnic == cnic).first()
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
