@@ -184,7 +184,7 @@ def get_my_attendance_route(
     user: User = Depends(get_current_user),
     db: DbSession = Depends(get_db),
 ):
-    return get_attendance_for_user_by_month(db, user.id, month, year)
+    return get_attendance_for_user_by_month(db, user.cnic, month, year)
 
 
 @router.get("/attendance/user/{cnic}", response_model=list[AttendanceOut])
