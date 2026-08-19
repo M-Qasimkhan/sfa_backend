@@ -1,10 +1,183 @@
 from datetime import date, datetime
-from sqlalchemy.orm import Session as DbSession
+from pathlib import Path
+
+from sqlalchemy import or_
+from sqlalchemy.orm import Session as DbSession, joinedload
 from fastapi import HTTPException, status
 
-from app.models import Attendance, LeaveRequest, Role, Session as SessionModel, Shop, User
-from app.schemas import AttendanceBreakEnd, AttendanceBreakStart, AttendanceCheckout, AttendanceCheckIn, LeaveCreate, ShopCreate, UserCreate, LoginRequest, UserUpdate
+from app.models import Attendance, Category, LeaveRequest, Product, Role, Session as SessionModel, Shop, User
+from app.schemas import (
+    AttendanceBreakEnd,
+    AttendanceBreakStart,
+    AttendanceCheckout,
+    AttendanceCheckIn,
+    CategoryCreate,
+    CategoryUpdate,
+    LeaveCreate,
+    LoginRequest,
+    ProductCreate,
+    ProductUpdate,
+    ShopCreate,
+    UserCreate,
+    UserUpdate,
+)
 from app.security import get_password_hash, verify_password, create_session_key, get_session_expiration
+
+
+def create_category(db: DbSession, payload: CategoryCreate) -> Category:
+    name = payload.name.strip()
+    if db.query(Category).filter(Category.name == name).first():
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Category already exists")
+
+    category = Category(name=name, is_active=payload.is_active)
+    db.add(category)
+    db.commit()
+    db.refresh(category)
+    return category
+
+
+def get_all_categories(db: DbSession, include_inactive: bool = False) -> list[Category]:
+    query = db.query(Category)
+    if not include_inactive:
+        query = query.filter(Category.is_active.is_(True))
+    return query.order_by(Category.created_at.desc()).all()
+
+
+def get_category_by_id(db: DbSession, category_id: int) -> Category:
+    category = db.query(Category).filter(Category.id == category_id).first()
+    if not category:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Category not found")
+    return category
+
+
+def update_category(db: DbSession, category_id: int, payload: CategoryUpdate | dict) -> Category:
+    category = get_category_by_id(db, category_id)
+    updates = payload if isinstance(payload, dict) else payload.model_dump(exclude_unset=True)
+
+    if "name" in updates and updates["name"] is not None:
+        name = str(updates["name"]).strip()
+        if not name:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Category name cannot be empty")
+        if db.query(Category).filter(Category.id != category_id, Category.name == name).first():
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Category name already exists")
+        category.name = name
+
+    if "is_active" in updates and updates["is_active"] is not None:
+        category.is_active = bool(updates["is_active"])
+
+    db.add(category)
+    db.commit()
+    db.refresh(category)
+    return category
+
+
+def delete_category(db: DbSession, category_id: int) -> None:
+    category = get_category_by_id(db, category_id)
+    category.is_active = False
+    db.add(category)
+    db.commit()
+
+
+def create_product(db: DbSession, payload: ProductCreate) -> Product:
+    get_category_by_id(db, payload.category_id)
+
+    if db.query(Product).filter(Product.sku == payload.sku).first():
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Product SKU already exists")
+
+    product = Product(
+        category_id=payload.category_id,
+        name=payload.name.strip(),
+        sku=payload.sku.strip(),
+        price=float(payload.price),
+        stock=int(payload.stock),
+        description=payload.description.strip() if payload.description else None,
+        image=payload.image,
+        is_active=payload.is_active,
+    )
+    db.add(product)
+    db.commit()
+    db.refresh(product)
+    return product
+
+
+def get_all_products(db: DbSession, category_id: int | None = None, search: str | None = None, include_inactive: bool = False) -> list[Product]:
+    query = db.query(Product).options(joinedload(Product.category))
+    if not include_inactive:
+        query = query.filter(Product.is_active.is_(True))
+    if category_id is not None:
+        query = query.filter(Product.category_id == category_id)
+    if search and search.strip():
+        keyword = f"%{search.strip()}%"
+        query = query.filter(or_(Product.name.ilike(keyword), Product.sku.ilike(keyword)))
+    return query.order_by(Product.created_at.desc()).all()
+
+
+def get_products_by_category(db: DbSession, category_id: int) -> list[Product]:
+    get_category_by_id(db, category_id)
+    return get_all_products(db, category_id=category_id)
+
+
+def search_products(db: DbSession, query: str) -> list[Product]:
+    if not query or not query.strip():
+        return get_all_products(db)
+    return get_all_products(db, search=query)
+
+
+def get_product_by_id(db: DbSession, product_id: int) -> Product:
+    product = (
+        db.query(Product)
+        .options(joinedload(Product.category))
+        .filter(Product.id == product_id)
+        .first()
+    )
+    if not product:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
+    return product
+
+
+def update_product(db: DbSession, product_id: int, payload: ProductUpdate | dict) -> Product:
+    product = get_product_by_id(db, product_id)
+    updates = payload if isinstance(payload, dict) else payload.model_dump(exclude_unset=True)
+
+    if "category_id" in updates and updates["category_id"] is not None:
+        get_category_by_id(db, int(updates["category_id"]))
+        product.category_id = int(updates["category_id"])
+
+    if "name" in updates and updates["name"] is not None:
+        product.name = str(updates["name"]).strip()
+
+    if "sku" in updates and updates["sku"] is not None:
+        sku = str(updates["sku"]).strip()
+        if db.query(Product).filter(Product.id != product_id, Product.sku == sku).first():
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Product SKU already exists")
+        product.sku = sku
+
+    if "price" in updates and updates["price"] is not None:
+        product.price = float(updates["price"])
+
+    if "stock" in updates and updates["stock"] is not None:
+        product.stock = int(updates["stock"])
+
+    if "description" in updates:
+        product.description = str(updates["description"]).strip() if updates["description"] else None
+
+    if "image" in updates:
+        product.image = updates["image"]
+
+    if "is_active" in updates and updates["is_active"] is not None:
+        product.is_active = bool(updates["is_active"])
+
+    db.add(product)
+    db.commit()
+    db.refresh(product)
+    return product
+
+
+def delete_product(db: DbSession, product_id: int) -> None:
+    product = get_product_by_id(db, product_id)
+    product.is_active = False
+    db.add(product)
+    db.commit()
 
 
 def get_users_under_me(db: DbSession, manager: User) -> list[User]:
