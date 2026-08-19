@@ -100,6 +100,36 @@ class Shop(Base):
     created_by: Mapped[User | None] = relationship("User", back_populates="shops")
 
 
+class Category(Base):
+    __tablename__ = "categories"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    name: Mapped[str] = mapped_column(String(150), nullable=False, unique=True, index=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    products: Mapped[list["Product"]] = relationship("Product", back_populates="category", cascade="all, delete-orphan")
+
+
+class Product(Base):
+    __tablename__ = "products"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    category_id: Mapped[int] = mapped_column(ForeignKey("categories.id", ondelete="CASCADE"), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(150), nullable=False, index=True)
+    sku: Mapped[str] = mapped_column(String(100), nullable=False, unique=True, index=True)
+    price: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+    stock: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    image: Mapped[str | None] = mapped_column(Text, nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    category: Mapped[Category] = relationship("Category", back_populates="products")
+
+
 class Attendance(Base):
     __tablename__ = "attendance"
     __table_args__ = (UniqueConstraint("user_id", "date", name="uix_user_date"),)
