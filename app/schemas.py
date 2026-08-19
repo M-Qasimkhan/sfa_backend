@@ -81,6 +81,81 @@ class ShopOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class CategoryCreate(BaseModel):
+    name: str
+    is_active: bool = True
+
+    @field_validator("name")
+    @classmethod
+    def normalize_name(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Category name is required")
+        return value
+
+
+class CategoryUpdate(BaseModel):
+    name: str | None = None
+    is_active: bool | None = None
+
+
+class CategoryOut(BaseModel):
+    id: int
+    name: str
+    is_active: bool = True
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+    model_config = {"from_attributes": True}
+
+
+class ProductCreate(BaseModel):
+    category_id: int
+    name: str
+    sku: str
+    price: float = 0
+    stock: int = 0
+    description: str | None = None
+    image: str | None = None
+    is_active: bool = True
+
+    @field_validator("name", "sku")
+    @classmethod
+    def normalize_string(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("This field is required")
+        return value
+
+
+class ProductUpdate(BaseModel):
+    category_id: int | None = None
+    name: str | None = None
+    sku: str | None = None
+    price: float | None = None
+    stock: int | None = None
+    description: str | None = None
+    image: str | None = None
+    is_active: bool | None = None
+
+
+class ProductOut(BaseModel):
+    id: int
+    category_id: int
+    name: str
+    sku: str
+    price: float
+    stock: int
+    description: str | None = None
+    image: str | None = None
+    is_active: bool = True
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+    category: CategoryOut | None = None
+
+    model_config = {"from_attributes": True}
+
+
 class UserOut(BaseModel):
     id: int
     name: str
